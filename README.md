@@ -139,4 +139,4 @@ This project is open source and available under the MIT License.
 
 Paul George - contact@paulgeorge.dev
 
-Project Link: https://github.com/paulgeorge35/go-crons
+Project Link: https://github.com/paulgeorge35/image-optimizer
