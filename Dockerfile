@@ -9,7 +9,7 @@ COPY package.json bun.lockb ./
 # Install dependencies
 RUN bun install --frozen-lockfile
 
-# Copy source files
+# Copy source files and images
 COPY . .
 
 # Build the application
@@ -22,10 +22,14 @@ WORKDIR /app
 
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/images ./images
 COPY package.json bun.lockb ./
 
 # Install production dependencies only
 RUN bun install --frozen-lockfile --production
+
+# Create images directory if it doesn't exist and set permissions
+RUN mkdir -p /app/images && chmod 755 /app/images
 
 # Expose the port the app runs on
 EXPOSE 3000

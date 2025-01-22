@@ -21,6 +21,12 @@
 
 ## Installation
 
+### Create .env file and set REDIS_PASSWORD
+
+```bash
+cp .env.example .env
+```
+
 ### Local Development
 
 1. Install Bun if not already installed:
@@ -64,7 +70,7 @@ For production:
 bun start
 ```
 
-For development with auto-reload:
+For development in watch mode:
 ```bash
 bun dev
 ```
@@ -89,23 +95,28 @@ Environment variables are configured in docker-compose.yml:
 
 The service exposes a single endpoint for image optimization:
 
-### GET /optimize
+### GET /:src
+
+Path Parameters:
+- `src` (required): Source URL of the image to optimize or the name of the image in the `images` directory
 
 Query Parameters:
-- `src` (required): Source URL of the image to optimize
-- `width` (optional): Desired width in pixels
-- `quality` (optional): WebP quality (0-100, default: 75)
+- `w` (optional): Desired width in pixels
+- `q` (optional): WebP quality (0-100, default: 75)
 
 Example Request:
 ```
-http://localhost:3000/optimize?src=https://example.com/image.jpg&width=800&quality=80
+http://localhost:3000/url-encoded-image-link?w=800&q=80
+
+http://localhost:3000/image-name?w=800&q=80
 ```
 
 The service will:
-1. Fetch the image from the provided URL
-2. Resize it to the specified width (if provided)
-3. Convert it to WebP format
-4. Return the optimized image
+1. If the parameter `src` is a URL, fetch the image from the provided URL, if not, look for the image in the `images` directory
+2. Check if the image is already in the Redis cache, if it is, return the cached image
+3. If the image is not in the cache, optimize it by resizing it to the specified width (if provided) and converting it to WebP format
+4. Cache the optimized image in Redis
+5. Return the optimized image
 
 ## Technical Details
 

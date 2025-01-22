@@ -1,10 +1,25 @@
+import cors from 'cors';
 import type { Request, Response } from 'express';
 import express from 'express';
+import fs from 'fs/promises';
+import path from 'path';
 import { createClient } from 'redis';
 import sharp from 'sharp';
 
 const app = express();
 const port = process.env.PORT || 3000;
+const IMAGES_DIR = path.join(process.cwd(), 'images');
+
+// Enable CORS for all routes
+app.use(cors({
+    origin: '*', // Allow all origins
+    methods: ['GET'], // Only allow GET requests
+    allowedHeaders: ['Content-Type'], // Allow Content-Type header
+    maxAge: 86400 // Cache preflight requests for 24 hours
+}));
+
+// Log the images directory path on startup
+console.log('Images directory:', IMAGES_DIR);
 
 let redis: ReturnType<typeof createClient> | null = null;
 let isCacheEnabled = false;
@@ -36,6 +51,50 @@ app.get('/favicon.ico', (req, res) => {
     res.status(204).end();
 });
 
+async function getImageBuffer(src: string): Promise<Buffer> {
+    // Check if src starts with http:// or https:// for URLs
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+        try {
+            const imageResponse = await fetch(src);
+            if (!imageResponse.ok) {
+                throw new Error('Image not found');
+            }
+            return Buffer.from(await imageResponse.arrayBuffer());
+        } catch (error) {
+            console.error('Error fetching URL:', error);
+            throw new Error(`Failed to fetch image from URL: ${src}`);
+        }
+    } else {
+        // Handle local file
+        const normalizedPath = path.normalize(src).replace(/^(\.\.(\/|\\|$))+/, '');
+        const localPath = path.join(IMAGES_DIR, normalizedPath);
+        
+        console.log('Current working directory:', process.cwd());
+        console.log('Images directory:', IMAGES_DIR);
+        console.log('Looking for local image:', localPath);
+        
+        try {
+            const exists = await fs.access(localPath).then(() => true).catch(() => false);
+            if (!exists) {
+                console.error('File not found:', localPath);
+                // List contents of images directory
+                try {
+                    const files = await fs.readdir(IMAGES_DIR);
+                    console.log('Available images:', files);
+                } catch (e) {
+                    console.error('Error reading images directory:', e);
+                }
+                throw new Error(`Image not found: ${src}`);
+            }
+            
+            return await fs.readFile(localPath);
+        } catch (fileError) {
+            console.error('Error reading local file:', fileError);
+            throw new Error(`Failed to read image: ${src}`);
+        }
+    }
+}
+
 app.get('/:src', async (req: Request, res: Response) => {
     try {
         const src = decodeURIComponent(req.params.src);
@@ -43,7 +102,7 @@ app.get('/:src', async (req: Request, res: Response) => {
         const quality = (req.query.q as string) || '75';
 
         if (!src) {
-            return res.status(400).json({ error: 'Source URL is required' });
+            return res.status(400).json({ error: 'Source image is required' });
         }
 
         // Try cache if Redis is available
@@ -59,13 +118,8 @@ app.get('/:src', async (req: Request, res: Response) => {
             }
         }
 
-        // Use Bun's native fetch
-        const imageResponse = await fetch(src);
-        if (!imageResponse.ok) {
-            return res.status(404).json({ error: 'Image not found' });
-        }
-
-        const originalBuffer = Buffer.from(await imageResponse.arrayBuffer());
+        // Get image buffer from URL or local file
+        const originalBuffer = await getImageBuffer(src);
         const originalSize = originalBuffer.length;
 
         // Process the image with sharp
@@ -104,13 +158,22 @@ app.get('/:src', async (req: Request, res: Response) => {
             res.set('X-Cache', 'MISS');
         }
 
-        // Send the optimized image
-        res.set('Content-Type', 'image/webp');
-        res.send(processedImage);
+        // If optimization resulted in a larger file, return original
+        if (parseFloat(savings) < 0) {
+            res.set('Content-Type', 'image/webp');
+            res.send(originalBuffer);
+        } else {
+            // Send the optimized image
+            res.set('Content-Type', 'image/webp'); 
+            res.send(processedImage);
+        }
 
     } catch (error) {
-        console.error('Error processing image:', error);
-        res.status(500).json({ error: 'Error processing image' });
+        console.error('Error processing image:', error instanceof Error ? error.message : error);
+        if (error instanceof Error && error.message.includes('not found')) {
+            return res.status(404).json({ error: error.message });
+        }
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Error processing image 1' });
     }
 });
 

@@ -2,6 +2,9 @@
 node_modules/
 bun.lockb
 
+# Images
+images/
+
 # Build output
 dist/
 build/
