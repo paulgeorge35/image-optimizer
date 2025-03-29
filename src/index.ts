@@ -177,6 +177,13 @@ app.get('/:src', async (req: Request, res: Response) => {
     }
 });
 
+// Always start a standard HTTP/1.1 server, Nginx will handle HTTPS/HTTP2
+
 app.listen(port, () => {
-    console.log(`Image optimization service running on port ${port} with Bun 🚀`);
+    // Log slightly differently based on NODE_ENV for clarity, but always use HTTP/1.1 internally
+    if (process.env.NODE_ENV === 'production') {
+        console.log(`🚀 Image optimization service running (proxied via Nginx) on internal port ${port} using HTTP/2`);
+    } else {
+        console.log(`🚀 Image optimization service running (development) on port ${port} using HTTP/1.1`);
+    }
 }); 

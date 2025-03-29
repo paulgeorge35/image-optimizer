@@ -10,7 +10,7 @@
     "type-check": "tsc --noEmit",
     "build": "tsc",
     "build:clean": "rm -rf dist && tsc",
-    "build:prod": "rm -rf dist && tsc && bun build src/index.ts --target node --outdir dist"
+    "build:prod": "rm -rf dist && tsc && NODE_ENV=production bun build src/index.ts --target node --outdir dist"
   },
   "dependencies": {
     "cors": "^2.8.5",
