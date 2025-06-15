@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       - PORT=3000
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
@@ -18,4 +18,4 @@ services:
       - redis_data:/data
 
 volumes:
-  redis_data: 
+  redis_data:

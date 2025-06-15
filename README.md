@@ -30,11 +30,13 @@ cp .env.example .env
 ### Local Development
 
 1. Install Bun if not already installed:
+
 ```bash
 curl -fsSL https://bun.sh/install | bash
 ```
 
 2. Install dependencies:
+
 ```bash
 bun install
 ```
@@ -42,21 +44,25 @@ bun install
 ### Docker Deployment
 
 1. Build and start the services:
+
 ```bash
 docker compose up --build
 ```
 
 Or run in detached mode:
+
 ```bash
 docker compose up --build -d
 ```
 
 2. Stop the services:
+
 ```bash
 docker compose down
 ```
 
 To remove volumes when stopping:
+
 ```bash
 docker compose down -v
 ```
@@ -66,16 +72,19 @@ docker compose down -v
 ### Local Development
 
 For production:
+
 ```bash
 bun start
 ```
 
 For development in watch mode:
+
 ```bash
 bun dev
 ```
 
 Type checking:
+
 ```bash
 bun type-check
 ```
@@ -83,11 +92,13 @@ bun type-check
 ### Docker Environment
 
 The service will be available at:
+
 ```
 http://localhost:3000
 ```
 
 Environment variables are configured in docker-compose.yml:
+
 - PORT=3000
 - REDIS_URL=redis://redis:6379
 
@@ -98,13 +109,16 @@ The service exposes a single endpoint for image optimization:
 ### GET /:src
 
 Path Parameters:
+
 - `src` (required): Source URL of the image to optimize or the name of the image in the `images` directory
 
 Query Parameters:
+
 - `w` (optional): Desired width in pixels
 - `q` (optional): WebP quality (0-100, default: 75)
 
 Example Request:
+
 ```
 http://localhost:3000/url-encoded-image-link?w=800&q=80
 
@@ -112,6 +126,7 @@ http://localhost:3000/image-name?w=800&q=80
 ```
 
 The service will:
+
 1. If the parameter `src` is a URL, fetch the image from the provided URL, if not, look for the image in the `images` directory
 2. Check if the image is already in the Redis cache, if it is, return the cached image
 3. If the image is not in the cache, optimize it by resizing it to the specified width (if provided) and converting it to WebP format
@@ -121,6 +136,7 @@ The service will:
 ## Technical Details
 
 The service leverages:
+
 - TypeScript for type safety
 - Bun's native features:
   - Fast JavaScript/TypeScript runtime
@@ -133,6 +149,7 @@ The service leverages:
 ## Performance Benefits
 
 WebP format provides:
+
 - Superior compression compared to JPEG/PNG
 - Smaller file sizes with quality retention
 - Support for lossy and lossless compression
