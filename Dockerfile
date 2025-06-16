@@ -3,6 +3,9 @@ FROM oven/bun:1 as builder
 
 WORKDIR /app
 
+# Create images directory
+RUN mkdir -p /app/images && chmod 755 /app/images
+
 # Copy package files
 COPY package.json bun.lock ./
 
@@ -35,4 +38,4 @@ RUN mkdir -p /app/images && chmod 755 /app/images
 EXPOSE 3000
 
 # Start the application
-CMD ["bun", "dist/index.js"] 
+CMD ["bun", "dist/server.js"] 
