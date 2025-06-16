@@ -69,11 +69,24 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
   if (src.startsWith("http://") || src.startsWith("https://")) {
     try {
       logger.info({ url: src }, "🌐 Fetching from URL");
+
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        controller.abort();
+      }, 10000); // 10 second timeout
+
       const imageResponse = await fetch(src, {
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+          Accept: "image/webp,image/*,*/*;q=0.8",
+          "Accept-Encoding": "gzip, deflate, br",
+          Connection: "keep-alive",
         },
+        signal: controller.signal,
+      }).finally(() => {
+        clearTimeout(timeout);
       });
 
       if (!imageResponse.ok) {
@@ -82,27 +95,61 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
             status: imageResponse.status,
             statusText: imageResponse.statusText,
             url: src,
+            headers: Object.fromEntries(imageResponse.headers.entries()),
           },
           "❌ Failed to fetch image from URL"
         );
         throw new Error(`Image not found: ${imageResponse.status} ${imageResponse.statusText}`);
       }
 
-      logger.info({ url: src }, "✅ Successfully fetched image from URL");
+      const contentType = imageResponse.headers.get("content-type");
+      if (!contentType?.startsWith("image/")) {
+        logger.error(
+          {
+            contentType,
+            url: src,
+            headers: Object.fromEntries(imageResponse.headers.entries()),
+          },
+          "❌ Invalid content type"
+        );
+        throw new Error(`Invalid content type: ${contentType}`);
+      }
+
+      logger.info(
+        {
+          url: src,
+          contentType,
+          contentLength: imageResponse.headers.get("content-length"),
+        },
+        "✅ Successfully fetched image from URL"
+      );
+
       const arrayBuffer = await imageResponse.arrayBuffer();
       return Buffer.from(arrayBuffer);
     } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          logger.error({ url: src }, "❌ Request timed out after 10 seconds");
+          throw new Error(`Request timed out while fetching image from URL: ${src}`);
+        }
+        logger.error(
+          {
+            err: error,
+            url: src,
+            stack: error.stack,
+          },
+          "❌ Error fetching URL"
+        );
+        throw new Error(`Failed to fetch image from URL: ${src} - ${error.message}`);
+      }
       logger.error(
         {
           err: error,
           url: src,
-          stack: error instanceof Error ? error.stack : undefined,
         },
-        "❌ Error fetching URL"
+        "❌ Unknown error fetching URL"
       );
-      throw new Error(
-        `Failed to fetch image from URL: ${src} - ${error instanceof Error ? error.message : "Unknown error"}`
-      );
+      throw new Error(`Failed to fetch image from URL: ${src} - Unknown error`);
     }
   } else {
     // Handle local file

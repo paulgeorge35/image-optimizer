@@ -27,7 +27,20 @@ Bun.serve({
       return new Response("Image Optimizer is running", { status: 200 });
     },
     "/:src": req => {
-      logger.info({ url: req.url, method: req.method }, "Received image request");
+      const url = new URL(req.url);
+      const src = decodeURIComponent(url.pathname.replace(/^\//, ""));
+
+      // Log the full request details
+      logger.info(
+        {
+          url: req.url,
+          method: req.method,
+          headers: Object.fromEntries(req.headers.entries()),
+          src,
+        },
+        "Received image request"
+      );
+
       return handleImageRequest(req);
     },
     "/favicon.ico": () => new Response(null, { status: 204 }),
