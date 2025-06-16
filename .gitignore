@@ -22,6 +22,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # IDE and editor files
+.cursor/
 .idea/
 .vscode/
 *.swp
