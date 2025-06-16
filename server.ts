@@ -1,7 +1,9 @@
 import { handleImageRequest } from "./lib";
 
+const port = Bun.env.PORT ? Number(Bun.env.PORT) : 3000;
+
 Bun.serve({
-  port: 3000,
+  port,
   routes: {
     "/:src": handleImageRequest,
     "/favicon.ico": () => new Response(null, { status: 204 }),
