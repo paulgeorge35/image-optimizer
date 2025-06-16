@@ -63,17 +63,46 @@ await initializeCache();
  * const buffer = await getImageBuffer('images/photo.jpg');
  */
 export async function getImageBuffer(src: string): Promise<Buffer> {
+  logger.info({ src }, "🔍 Starting image fetch");
+
   // Check if src starts with http:// or https:// for URLs
   if (src.startsWith("http://") || src.startsWith("https://")) {
     try {
-      const imageResponse = await fetch(src);
+      logger.info({ url: src }, "🌐 Fetching from URL");
+      const imageResponse = await fetch(src, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        },
+      });
+
       if (!imageResponse.ok) {
-        throw new Error("Image not found");
+        logger.error(
+          {
+            status: imageResponse.status,
+            statusText: imageResponse.statusText,
+            url: src,
+          },
+          "❌ Failed to fetch image from URL"
+        );
+        throw new Error(`Image not found: ${imageResponse.status} ${imageResponse.statusText}`);
       }
-      return Buffer.from(await imageResponse.arrayBuffer());
+
+      logger.info({ url: src }, "✅ Successfully fetched image from URL");
+      const arrayBuffer = await imageResponse.arrayBuffer();
+      return Buffer.from(arrayBuffer);
     } catch (error) {
-      logger.error({ err: error }, "Error fetching URL");
-      throw new Error(`Failed to fetch image from URL: ${src}`);
+      logger.error(
+        {
+          err: error,
+          url: src,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        "❌ Error fetching URL"
+      );
+      throw new Error(
+        `Failed to fetch image from URL: ${src} - ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   } else {
     // Handle local file
@@ -82,7 +111,7 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
 
     logger.info(
       { cwd: process.cwd(), imagesDir: IMAGES_DIR, localPath },
-      "🔍 Looking for local image"
+      "📂 Looking for local image"
     );
 
     try {
@@ -90,21 +119,32 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
       const exists = await file.exists();
 
       if (!exists) {
-        logger.warn({ localPath }, "File not found");
+        logger.warn({ localPath }, "❌ File not found");
         // List contents of images directory
         try {
           const files = await Bun.$`ls ${IMAGES_DIR}`.text();
-          logger.info({ files }, "Available images");
+          logger.info({ files }, "📋 Available images");
         } catch (e) {
-          logger.error({ err: e }, "Error reading images directory");
+          logger.error({ err: e }, "❌ Error reading images directory");
         }
         throw new Error(`Image not found: ${src}`);
       }
 
-      return Buffer.from(await file.arrayBuffer());
+      logger.info({ localPath }, "✅ Found local image");
+      const arrayBuffer = await file.arrayBuffer();
+      return Buffer.from(arrayBuffer);
     } catch (fileError) {
-      logger.error({ err: fileError }, "Error reading local file");
-      throw new Error(`Failed to read image: ${src}`);
+      logger.error(
+        {
+          err: fileError,
+          localPath,
+          stack: fileError instanceof Error ? fileError.stack : undefined,
+        },
+        "❌ Error reading local file"
+      );
+      throw new Error(
+        `Failed to read image: ${src} - ${fileError instanceof Error ? fileError.message : "Unknown error"}`
+      );
     }
   }
 }
