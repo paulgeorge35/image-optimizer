@@ -16,7 +16,7 @@ const logger = pino({
 const port = Bun.env.PORT ? Number(Bun.env.PORT) : 3000;
 const hostname = "0.0.0.0"; // Bind to all interfaces
 
-logger.info({ port, hostname }, "Starting server...");
+logger.info(`⚙️  Starting server on ${hostname}:${port}`);
 
 Bun.serve({
   port,
@@ -30,9 +30,9 @@ Bun.serve({
     return new Response("Not Found", { status: 404 });
   },
   error(error) {
-    logger.error({ err: error }, "Server error occurred");
+    logger.error({ err: error }, "❌ Server error occurred");
     return new Response("Internal Server Error", { status: 500 });
   },
 });
 
-logger.info("Server started successfully");
+logger.info("🚀 Server started successfully");
