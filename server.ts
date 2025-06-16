@@ -22,11 +22,18 @@ Bun.serve({
   port,
   hostname,
   routes: {
-    "/": () => new Response("Image Optimizer is running", { status: 200 }),
-    "/:src": handleImageRequest,
+    "/": req => {
+      logger.info({ url: req.url, method: req.method }, "Received request to root endpoint");
+      return new Response("Image Optimizer is running", { status: 200 });
+    },
+    "/:src": req => {
+      logger.info({ url: req.url, method: req.method }, "Received image request");
+      return handleImageRequest(req);
+    },
     "/favicon.ico": () => new Response(null, { status: 204 }),
   },
-  fetch(_req) {
+  fetch(req) {
+    logger.warn({ url: req.url, method: req.method }, "404 Not Found");
     return new Response("Not Found", { status: 404 });
   },
   error(error) {

@@ -23,6 +23,9 @@ FROM oven/bun:1-slim
 
 WORKDIR /app
 
+# Install wget for healthcheck
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/images ./images
@@ -39,7 +42,7 @@ EXPOSE 3000
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 # Set environment variables
 ENV NODE_ENV=production

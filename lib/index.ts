@@ -133,7 +133,10 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     const width = url.searchParams.get("w");
     const quality = url.searchParams.get("q") || "75";
 
+    logger.info({ src, width, quality }, "📥 Processing image request");
+
     if (!src) {
+      logger.warn("❌ No source image provided");
       return new Response(JSON.stringify({ error: "Source image is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -143,31 +146,37 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     // Try cache if Redis is available
     if (isCacheEnabled && redis) {
       const cacheKey = `img:${src}:w=${width}:q=${quality}`;
-      const cachedImage = await redis.get(cacheKey);
-
-      if (cachedImage) {
-        logger.info({ cacheKey }, "✅ Cache hit");
-        return new Response(new Uint8Array(Buffer.from(cachedImage, "base64")), {
-          headers: {
-            "Content-Type": "image/webp",
-            "X-Cache": "HIT",
-          },
-        });
+      try {
+        const cachedImage = await redis.get(cacheKey);
+        if (cachedImage) {
+          logger.info({ cacheKey }, "✅ Cache hit");
+          return new Response(new Uint8Array(Buffer.from(cachedImage, "base64")), {
+            headers: {
+              "Content-Type": "image/webp",
+              "X-Cache": "HIT",
+            },
+          });
+        }
+        logger.info({ cacheKey }, "❌ Cache miss");
+      } catch (cacheError) {
+        logger.error({ err: cacheError }, "❌ Cache error");
       }
-      logger.info({ cacheKey }, "❌ Cache miss");
     }
 
     // Get image buffer from URL or local file
+    logger.info({ src }, "🔍 Fetching image");
     const originalBuffer = await getImageBuffer(src);
     const originalSize = originalBuffer.length;
 
     // Process the image with sharp
+    logger.info("🔄 Processing image with Sharp");
     let imageProcess = sharp(originalBuffer);
 
     // Resize if width is provided
     if (width) {
       const parsedWidth = parseInt(width, 10);
       if (!isNaN(parsedWidth)) {
+        logger.info({ width: parsedWidth }, "📏 Resizing image");
         imageProcess = imageProcess.resize(parsedWidth);
       }
     }
@@ -175,10 +184,12 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     // Set quality and convert to WebP
     const q = parseInt(quality, 10);
     if (!isNaN(q) && q >= 0 && q <= 100) {
+      logger.info({ quality: q }, "🎨 Setting quality");
       imageProcess = imageProcess.webp({ quality: q });
     }
 
     // Get the processed buffer
+    logger.info("💾 Converting to buffer");
     const processedImage = await imageProcess.toBuffer();
     const optimizedSize = processedImage.length;
     const savings = (((originalSize - optimizedSize) / originalSize) * 100).toFixed(2);
@@ -193,12 +204,17 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     // Cache the optimized image if Redis is available
     if (isCacheEnabled && redis) {
       const cacheKey = `img:${src}:w=${width}:q=${quality}`;
-      logger.info({ cacheKey }, "💾 Caching image");
-      await redis.set(cacheKey, processedImage.toString("base64"), "EX", 60 * 60 * 24 * 7); // Cache for 7 days
+      try {
+        logger.info({ cacheKey }, "💾 Caching image");
+        await redis.set(cacheKey, processedImage.toString("base64"), "EX", 60 * 60 * 24 * 7); // Cache for 7 days
+      } catch (cacheError) {
+        logger.error({ err: cacheError }, "❌ Failed to cache image");
+      }
     }
 
     // If optimization resulted in a larger file, return original
     if (parseFloat(savings) < 0) {
+      logger.info("⚠️ Optimization resulted in larger file, returning original");
       return new Response(new Uint8Array(originalBuffer), {
         headers: {
           "Content-Type": "image/webp",
@@ -207,6 +223,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
       });
     } else {
       // Send the optimized image
+      logger.info("✅ Sending optimized image");
       return new Response(new Uint8Array(processedImage), {
         headers: {
           "Content-Type": "image/webp",
@@ -215,7 +232,10 @@ export async function handleImageRequest(req: Request): Promise<Response> {
       });
     }
   } catch (error) {
-    logger.error({ err: error }, "Error processing image");
+    logger.error(
+      { err: error, stack: error instanceof Error ? error.stack : undefined },
+      "❌ Error processing image"
+    );
     if (error instanceof Error && error.message.includes("not found")) {
       return new Response(JSON.stringify({ error: error.message }), {
         status: 404,
