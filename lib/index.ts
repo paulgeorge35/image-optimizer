@@ -169,12 +169,17 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
     }
   } else {
     // Handle R2 bucket key
-    logger.info({ src }, "🔍 Looking for image in R2 bucket");
-    if (!s3Client) {
-      throw new Error("S3 client not initialized. Please set R2 credentials.");
-    }
-
     try {
+      // Try to get cached original image first
+      const cachedOriginal = await getCachedOriginalImage(src);
+      if (cachedOriginal) {
+        logger.info({ src }, "✅ Original image retrieved from cache");
+        return cachedOriginal;
+      }
+
+      if (!s3Client) {
+        throw new Error("S3 client not initialized. Please set R2 credentials.");
+      }
       logger.info({ src }, "🔍 Looking for image in R2 bucket");
       const response = s3Client.file(src, credentials);
 
@@ -184,9 +189,13 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
 
       // Get the file content as buffer
       const buffer = await response.arrayBuffer();
+      const imageBuffer = Buffer.from(buffer);
       logger.info({ key: src, size: buffer.byteLength }, "✅ Image retrieved from R2");
 
-      return Buffer.from(buffer);
+      // Cache the original image
+      await cacheOriginalImage(src, imageBuffer);
+
+      return imageBuffer;
     } catch (s3Error) {
       logger.error({ err: s3Error, key: src }, "Error reading from R2 bucket");
 
@@ -198,6 +207,46 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
       throw new Error(`Failed to read image from R2: ${src}`);
     }
   }
+}
+
+/**
+ * Checks if an original image exists in the cache and returns it if found.
+ *
+ * @param {string} src - The source image path or URL.
+ * @returns {Promise<Buffer|null>} The cached original image buffer or null if not found.
+ */
+async function getCachedOriginalImage(src: string): Promise<Buffer | null> {
+  if (!isCacheEnabled || !redis) {
+    return null;
+  }
+
+  const cacheKey = `original:${src}`;
+  logger.info({ cacheKey }, "🔍 Getting original image from Redis");
+  const cachedImage = await redis.get(cacheKey);
+
+  if (cachedImage) {
+    logger.info({ cacheKey }, "✅ Original image cache hit");
+    return Buffer.from(cachedImage, "base64");
+  }
+
+  logger.info({ cacheKey }, "❌ Original image cache miss");
+  return null;
+}
+
+/**
+ * Caches an original image in Redis.
+ *
+ * @param {string} src - The source image path or URL.
+ * @param {Buffer} imageBuffer - The original image buffer to cache.
+ */
+async function cacheOriginalImage(src: string, imageBuffer: Buffer): Promise<void> {
+  if (!isCacheEnabled || !redis) {
+    return;
+  }
+
+  const cacheKey = `original:${src}`;
+  logger.info({ cacheKey }, "💾 Caching original image");
+  await redis.set(cacheKey, imageBuffer.toString("base64"), "EX", 60 * 60 * 24 * 7); // Cache for 7 days
 }
 
 /**
