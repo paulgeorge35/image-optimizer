@@ -70,8 +70,8 @@ export async function initializeCache() {
 
     isCacheEnabled = true;
     logger.info("✅ Redis cache enabled");
-  } catch (error) {
-    logger.error("❌ Redis connection failed");
+  } catch {
+    logger.error({ REDIS_URL }, "❌ Redis connection failed");
     redis = null;
     isCacheEnabled = false;
   }
