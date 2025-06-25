@@ -33,12 +33,7 @@ Required environment variables:
 
 ```bash
 # Redis Configuration (for production - set up in Coolify)
-# Option 1: Single REDIS_URL (recommended)
 REDIS_URL=redis://localhost:6379
-
-# Option 2: Separate host and port (for Coolify compatibility)
-REDIS_HOST=localhost
-REDIS_PORT=6379
 
 # Cloudflare R2 Configuration
 R2_ACCOUNT_ID=your_account_id
@@ -138,11 +133,7 @@ http://localhost:3000
 Set these environment variables in your Coolify app:
 
 ```
-# Redis Configuration (use the service name from step 1)
-REDIS_HOST=your-redis-service-name
-REDIS_PORT=6379
-
-# Or use REDIS_URL
+# Redis Configuration
 REDIS_URL=redis://your-redis-service-name:6379
 
 # Cloudflare R2 Configuration

@@ -40,10 +40,8 @@ let redis: Bun.RedisClient | null = null;
 let isCacheEnabled = false;
 let s3Client: Bun.S3Client | null = null;
 
-const REDIS_URL = `redis://${Bun.env.REDIS_HOST ?? "127.0.0.1"}:${Bun.env.REDIS_PORT ?? "6379"}`;
-
 /**
- * Initializes the Redis cache connection if REDIS_PORT is provided in environment variables.
+ * Initializes the Redis cache connection if REDIS_URL is provided in environment variables.
  * Sets up the Redis client and enables caching if successful.
  *
  * @example
@@ -53,7 +51,7 @@ const REDIS_URL = `redis://${Bun.env.REDIS_HOST ?? "127.0.0.1"}:${Bun.env.REDIS_
  */
 export async function initializeCache() {
   try {
-    redis = new Bun.RedisClient(REDIS_URL);
+    redis = new Bun.RedisClient(Bun.env.REDIS_URL);
     redis.onconnect = () => {
       logger.info("✅ Redis cache connected");
     };
@@ -71,7 +69,7 @@ export async function initializeCache() {
     isCacheEnabled = true;
     logger.info("✅ Redis cache enabled");
   } catch {
-    logger.error({ REDIS_URL }, "❌ Redis connection failed");
+    logger.error({ REDIS_URL: Bun.env.REDIS_URL }, "❌ Redis connection failed");
     redis = null;
     isCacheEnabled = false;
   }
