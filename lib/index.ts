@@ -1,16 +1,38 @@
+import { mkdir } from "node:fs/promises";
+import { join } from "path";
 import pino from "pino";
 import sharp from "sharp";
 
-// Configure Pino logger
+// Ensure logs directory exists
+try {
+  await mkdir("logs", { recursive: true });
+} catch (error) {
+  // Directory might already exist, ignore error
+}
+
+// Configure Pino logger with file transport
 export const logger = pino({
   level: "info",
   transport: {
-    target: "pino-pretty",
-    options: {
-      colorize: true,
-      translateTime: "SYS:standard",
-      ignore: "pid,hostname",
-    },
+    targets: [
+      {
+        target: "pino-pretty",
+        level: "info",
+        options: {
+          colorize: true,
+          translateTime: "SYS:standard",
+          ignore: "pid,hostname",
+        },
+      },
+      {
+        target: "pino/file",
+        level: "info",
+        options: {
+          destination: join("logs", "app.log"),
+          mkdir: true,
+        },
+      },
+    ],
   },
 });
 
@@ -98,6 +120,23 @@ export async function initializeS3Client() {
   }
 }
 
+/**
+ * Gets the current status of Redis and S3 connections.
+ *
+ * @returns {Object} Status object containing Redis and S3 connection states.
+ *
+ * @example
+ * const status = getServiceStatus();
+ * // Returns: { redis: "connected", s3: "connected" }
+ */
+export function getServiceStatus() {
+  return {
+    redis: isCacheEnabled && redis ? "connected" : "disabled",
+    s3: s3Client ? "connected" : "disabled",
+    timestamp: new Date().toISOString(),
+  };
+}
+
 await initializeCache();
 await initializeS3Client();
 
@@ -164,6 +203,110 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
 }
 
 /**
+ * Checks if an image exists in the cache and returns it if found.
+ *
+ * @param {string} src - The source image path or URL.
+ * @param {string} width - The requested width.
+ * @param {string} quality - The requested quality.
+ * @returns {Promise<Buffer|null>} The cached image buffer or null if not found.
+ */
+async function getCachedImage(
+  src: string,
+  width: string | null,
+  quality: string
+): Promise<Buffer | null> {
+  if (!isCacheEnabled || !redis) {
+    return null;
+  }
+
+  logger.info("🔍 Trying cache");
+  const cacheKey = `img:${src}:w=${width}:q=${quality}`;
+  logger.info({ cacheKey }, "🔍 Getting from Redis");
+  const cachedImage = await redis.get(cacheKey);
+
+  if (cachedImage) {
+    logger.info({ cacheKey }, "✅ Cache hit");
+    return Buffer.from(cachedImage, "base64");
+  }
+
+  logger.info({ cacheKey }, "❌ Cache miss");
+  return null;
+}
+
+/**
+ * Caches an optimized image in Redis.
+ *
+ * @param {string} src - The source image path or URL.
+ * @param {string} width - The requested width.
+ * @param {string} quality - The requested quality.
+ * @param {Buffer} imageBuffer - The image buffer to cache.
+ */
+async function cacheImage(
+  src: string,
+  width: string | null,
+  quality: string,
+  imageBuffer: Buffer
+): Promise<void> {
+  if (!isCacheEnabled || !redis) {
+    return;
+  }
+
+  const cacheKey = `img:${src}:w=${width}:q=${quality}`;
+  logger.info({ cacheKey }, "💾 Caching image");
+  await redis.set(cacheKey, imageBuffer.toString("base64"), "EX", 60 * 60 * 24 * 7); // Cache for 7 days
+}
+
+/**
+ * Processes an image using Sharp with the specified parameters.
+ *
+ * @param {Buffer} originalBuffer - The original image buffer.
+ * @param {string} width - The requested width for resizing.
+ * @param {string} quality - The requested quality (0-100).
+ * @returns {Promise<Buffer>} The processed image buffer.
+ */
+async function processImage(
+  originalBuffer: Buffer,
+  width: string | null,
+  quality: string
+): Promise<Buffer> {
+  let imageProcess = sharp(originalBuffer);
+
+  // Resize if width is provided
+  if (width) {
+    const parsedWidth = parseInt(width, 10);
+    if (!isNaN(parsedWidth)) {
+      imageProcess = imageProcess.resize(parsedWidth);
+    }
+  }
+
+  // Set quality and convert to WebP
+  const q = parseInt(quality, 10);
+  if (!isNaN(q) && q >= 0 && q <= 100) {
+    imageProcess = imageProcess.webp({ quality: q });
+  }
+
+  return await imageProcess.toBuffer();
+}
+
+/**
+ * Logs image optimization statistics.
+ *
+ * @param {string} src - The source image path or URL.
+ * @param {number} originalSize - The original image size in bytes.
+ * @param {number} optimizedSize - The optimized image size in bytes.
+ */
+function logOptimizationStats(src: string, originalSize: number, optimizedSize: number): void {
+  const savings = (((originalSize - optimizedSize) / originalSize) * 100).toFixed(2);
+
+  logger.info({ src }, `🖼️  Image processed`);
+  logger.info({ originalSize: (originalSize / 1024).toFixed(2) + " KB" }, `💾 Original size`);
+  logger.info({ optimizedSize: (optimizedSize / 1024).toFixed(2) + " KB" }, `💾 Optimized size`);
+  if (parseFloat(savings) > 0) {
+    logger.info({ savings: `${savings}%` }, `💰 Saved`);
+  }
+}
+
+/**
  * Handles image optimization requests, including resizing, quality adjustment, and caching.
  * Processes images using Sharp and returns optimized WebP format.
  *
@@ -194,64 +337,34 @@ export async function handleImageRequest(req: Request): Promise<Response> {
         headers: { "Content-Type": "application/json" },
       });
     }
-    // Try cache if Redis is available
-    if (isCacheEnabled && redis) {
-      logger.info("🔍 Trying cache");
-      const cacheKey = `img:${src}:w=${width}:q=${quality}`;
-      logger.info({ cacheKey }, "🔍 Getting from Redis");
-      const cachedImage = await redis.get(cacheKey);
 
-      if (cachedImage) {
-        logger.info({ cacheKey }, "✅ Cache hit");
-        return new Response(new Uint8Array(Buffer.from(cachedImage, "base64")), {
-          headers: {
-            "Content-Type": "image/webp",
-            "X-Cache": "HIT",
-          },
-        });
-      }
-      logger.info({ cacheKey }, "❌ Cache miss");
+    // Try to get cached image
+    const cachedImage = await getCachedImage(src, width, quality);
+    if (cachedImage) {
+      return new Response(new Uint8Array(cachedImage), {
+        headers: {
+          "Content-Type": "image/webp",
+          "X-Cache": "HIT",
+        },
+      });
     }
 
     // Get image buffer from URL or R2 bucket
     const originalBuffer = await getImageBuffer(src);
     const originalSize = originalBuffer.length;
 
-    // Process the image with sharp
-    let imageProcess = sharp(originalBuffer);
-
-    // Resize if width is provided
-    if (width) {
-      const parsedWidth = parseInt(width, 10);
-      if (!isNaN(parsedWidth)) {
-        imageProcess = imageProcess.resize(parsedWidth);
-      }
-    }
-
-    // Set quality and convert to WebP
-    const q = parseInt(quality, 10);
-    if (!isNaN(q) && q >= 0 && q <= 100) {
-      imageProcess = imageProcess.webp({ quality: q });
-    }
-
-    // Get the processed buffer
-    const processedImage = await imageProcess.toBuffer();
+    // Process the image
+    const processedImage = await processImage(originalBuffer, width, quality);
     const optimizedSize = processedImage.length;
+
+    // Log optimization statistics
+    logOptimizationStats(src, originalSize, optimizedSize);
+
+    // Cache the optimized image
+    await cacheImage(src, width, quality, processedImage);
+
+    // Calculate savings
     const savings = (((originalSize - optimizedSize) / originalSize) * 100).toFixed(2);
-
-    logger.info({ src }, `🖼️  Image processed`);
-    logger.info({ originalSize: (originalSize / 1024).toFixed(2) + " KB" }, `💾 Original size`);
-    logger.info({ optimizedSize: (optimizedSize / 1024).toFixed(2) + " KB" }, `💾 Optimized size`);
-    if (parseFloat(savings) > 0) {
-      logger.info({ savings: `${savings}%` }, `💰 Saved`);
-    }
-
-    // Cache the optimized image if Redis is available
-    if (isCacheEnabled && redis) {
-      const cacheKey = `img:${src}:w=${width}:q=${quality}`;
-      logger.info({ cacheKey }, "💾 Caching image");
-      await redis.set(cacheKey, processedImage.toString("base64"), "EX", 60 * 60 * 24 * 7); // Cache for 7 days
-    }
 
     // If optimization resulted in a larger file, return original
     if (parseFloat(savings) < 0) {
