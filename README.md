@@ -12,12 +12,14 @@
 - ⚡ High-performance Bun runtime
 - 🔄 Auto-reload in development mode
 - ☁️ Cloudflare R2 storage integration
+- 🔄 Redis caching (optional)
 
 ## Prerequisites
 
 - Bun runtime (for local development)
 - Node.js environment (for local development)
 - Cloudflare R2 account and bucket (for cloud storage)
+- Redis service (for production caching)
 
 ## Installation
 
@@ -30,7 +32,11 @@ cp .env.example .env
 Required environment variables:
 
 ```bash
-# Redis Configuration
+# Redis Configuration (for production - set up in Coolify)
+# Option 1: Single REDIS_URL (recommended)
+REDIS_URL=redis://localhost:6379
+
+# Option 2: Separate host and port (for Coolify compatibility)
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
@@ -73,6 +79,19 @@ bun build
 bun start
 ```
 
+### Docker Development
+
+```bash
+# Build and run with docker-compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
 Build the project:
 
 ```bash
@@ -96,6 +115,47 @@ The service will be available at:
 ```
 http://localhost:3000
 ```
+
+## Coolify Deployment
+
+### 1. Create Redis Service in Coolify
+
+1. Go to your Coolify dashboard
+2. Create a new "Database" service
+3. Choose Redis
+4. Note the service name (e.g., `redis-service`)
+
+### 2. Configure Image Optimizer App
+
+1. Create a new application in Coolify
+2. Connect your Git repository
+3. Set build command: `bun build`
+4. Set start command: `bun run dist/server.js`
+5. Set port: `3000`
+
+### 3. Environment Variables
+
+Set these environment variables in your Coolify app:
+
+```
+# Redis Configuration (use the service name from step 1)
+REDIS_HOST=your-redis-service-name
+REDIS_PORT=6379
+
+# Or use REDIS_URL
+REDIS_URL=redis://your-redis-service-name:6379
+
+# Cloudflare R2 Configuration
+R2_ACCOUNT_ID=your_account_id
+R2_ACCESS_KEY_ID=your_access_key_id
+R2_SECRET_ACCESS_KEY=your_secret_access_key
+R2_BUCKET_NAME=your_bucket_name
+R2_REGION=auto
+```
+
+### 4. Link Services (Optional)
+
+In your app settings, link the Redis service as a dependency for better service discovery.
 
 ## API Usage
 
