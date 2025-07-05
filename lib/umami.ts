@@ -43,6 +43,7 @@ interface ImageOptimizationEvent {
   cacheHit?: boolean;
   source: "url" | "r2";
   referrer?: string;
+  userAgent?: string;
 }
 
 export class UmamiService {
@@ -135,7 +136,7 @@ export class UmamiService {
   /**
    * Sends an event to Umami
    */
-  async trackEvent(event: UmamiEvent): Promise<boolean> {
+  async trackEvent(event: UmamiEvent, userAgent?: string): Promise<boolean> {
     if (!this.isAuthenticated) {
       logger.warn("Umami: Not authenticated, skipping event tracking");
       return false;
@@ -157,18 +158,38 @@ export class UmamiService {
         type: "event",
       };
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      };
+
+      // Use the original User-Agent if provided, otherwise fall back to default
+      headers["User-Agent"] = userAgent || "Image-Optimizer-Service/1.0.0";
+
       const response = await fetch(`${this.config.baseUrl}/api/send`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "User-Agent": "Image-Optimizer-Service/1.0.0",
-        },
+        headers,
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         throw new Error(`Failed to send event: ${response.status}`);
+      }
+
+      // Check if response indicates bot/spam detection
+      const responseText = await response.text();
+      try {
+        const responseData = JSON.parse(responseText);
+        if (responseData.beep === "boop") {
+          logger.error("❌ Umami tagged request as bot/spam", {
+            event: event.name,
+            userAgent: userAgent || "default",
+            responseData,
+          });
+          return false;
+        }
+      } catch (parseError) {
+        // Response is not JSON, which is fine
       }
 
       logger.info("✅ Umami event sent successfully", { event, response });
@@ -198,6 +219,7 @@ export class UmamiService {
         cacheHit: event.cacheHit,
         source: event.source,
         referrer: event.referrer,
+        userAgent: event.userAgent,
         compressionRatio:
           event.originalSize && event.optimizedSize
             ? Math.round((1 - event.optimizedSize / event.originalSize) * 100)
@@ -207,7 +229,7 @@ export class UmamiService {
       title: "Image Optimization",
     };
 
-    return this.trackEvent(eventData);
+    return this.trackEvent(eventData, event.userAgent);
   }
 
   /**
@@ -216,18 +238,23 @@ export class UmamiService {
   async trackCacheHit(
     originalUrl: string,
     source: "url" | "r2",
-    referrer?: string
+    referrer?: string,
+    userAgent?: string
   ): Promise<boolean> {
-    return this.trackEvent({
-      name: "cache_hit",
-      data: {
-        originalUrl,
-        source,
-        referrer,
+    return this.trackEvent(
+      {
+        name: "cache_hit",
+        data: {
+          originalUrl,
+          source,
+          referrer,
+          userAgent,
+        },
+        url: "/optimize",
+        title: "Cache Hit",
       },
-      url: "/optimize",
-      title: "Cache Hit",
-    });
+      userAgent
+    );
   }
 
   /**
@@ -236,18 +263,23 @@ export class UmamiService {
   async trackCacheMiss(
     originalUrl: string,
     source: "url" | "r2",
-    referrer?: string
+    referrer?: string,
+    userAgent?: string
   ): Promise<boolean> {
-    return this.trackEvent({
-      name: "cache_miss",
-      data: {
-        originalUrl,
-        source,
-        referrer,
+    return this.trackEvent(
+      {
+        name: "cache_miss",
+        data: {
+          originalUrl,
+          source,
+          referrer,
+          userAgent,
+        },
+        url: "/optimize",
+        title: "Cache Miss",
       },
-      url: "/optimize",
-      title: "Cache Miss",
-    });
+      userAgent
+    );
   }
 
   /**

@@ -393,6 +393,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
   let success = false;
   let error: string | undefined;
   let referrer: string | undefined;
+  let userAgent: string | undefined;
 
   try {
     logger.info({ url: req.url }, "🔍 Handling image request");
@@ -401,8 +402,9 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     const width = url.searchParams.get("w");
     const quality = url.searchParams.get("q") || "75";
 
-    // Extract referrer from headers
+    // Extract referrer and user agent from headers
     referrer = req.headers.get("referer") || req.headers.get("referrer") || undefined;
+    userAgent = req.headers.get("user-agent") || undefined;
 
     if (!src) {
       error = "Source image is required";
@@ -423,7 +425,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
 
       // Track cache hit
       if (umamiService) {
-        await umamiService.trackCacheHit(src, source, referrer);
+        await umamiService.trackCacheHit(src, source, referrer, userAgent);
       }
 
       return new Response(new Uint8Array(cachedImage), {
@@ -436,7 +438,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
 
     // Track cache miss
     if (umamiService) {
-      await umamiService.trackCacheMiss(src, source, referrer);
+      await umamiService.trackCacheMiss(src, source, referrer, userAgent);
     }
 
     // Get image buffer from URL or R2 bucket
@@ -513,6 +515,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
         cacheHit,
         source,
         referrer,
+        userAgent,
       });
     }
   }
