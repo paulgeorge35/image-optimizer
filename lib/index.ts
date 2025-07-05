@@ -384,6 +384,15 @@ function logOptimizationStats(src: string, originalSize: number, optimizedSize: 
  * // Returns optimized WebP image with width 800px and 80% quality
  */
 export async function handleImageRequest(req: Request): Promise<Response> {
+  const startTime = Date.now();
+  let processingTime: number | undefined;
+  let cacheHit = false;
+  let source: "url" | "r2" = "url";
+  let originalSize: number | undefined;
+  let optimizedSize: number | undefined;
+  let success = false;
+  let error: string | undefined;
+
   try {
     logger.info({ url: req.url }, "🔍 Handling image request");
     const url = new URL(req.url);
@@ -392,15 +401,27 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     const quality = url.searchParams.get("q") || "75";
 
     if (!src) {
-      return new Response(JSON.stringify({ error: "Source image is required" }), {
+      error = "Source image is required";
+      return new Response(JSON.stringify({ error }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
+    // Determine source type
+    source = src.startsWith("http://") || src.startsWith("https://") ? "url" : "r2";
+
     // Try to get cached image
     const cachedImage = await getCachedImage(src, width, quality);
     if (cachedImage) {
+      cacheHit = true;
+      processingTime = Date.now() - startTime;
+
+      // Track cache hit
+      if (umamiService) {
+        await umamiService.trackCacheHit(src, source);
+      }
+
       return new Response(new Uint8Array(cachedImage), {
         headers: {
           "Content-Type": "image/webp",
@@ -409,13 +430,18 @@ export async function handleImageRequest(req: Request): Promise<Response> {
       });
     }
 
+    // Track cache miss
+    if (umamiService) {
+      await umamiService.trackCacheMiss(src, source);
+    }
+
     // Get image buffer from URL or R2 bucket
     const originalBuffer = await getImageBuffer(src);
-    const originalSize = originalBuffer.length;
+    originalSize = originalBuffer.length;
 
     // Process the image
     const processedImage = await processImage(originalBuffer, width, quality);
-    const optimizedSize = processedImage.length;
+    optimizedSize = processedImage.length;
 
     // Log optimization statistics
     logOptimizationStats(src, originalSize, optimizedSize);
@@ -425,6 +451,9 @@ export async function handleImageRequest(req: Request): Promise<Response> {
 
     // Calculate savings
     const savings = (((originalSize - optimizedSize) / originalSize) * 100).toFixed(2);
+
+    processingTime = Date.now() - startTime;
+    success = true;
 
     // If optimization resulted in a larger file, return original
     if (parseFloat(savings) < 0) {
@@ -443,24 +472,43 @@ export async function handleImageRequest(req: Request): Promise<Response> {
         },
       });
     }
-  } catch (error) {
-    logger.error({ err: error }, "Error processing image");
-    if (error instanceof Error && error.message.includes("not found")) {
-      return new Response(JSON.stringify({ error: error.message }), {
+  } catch (err) {
+    processingTime = Date.now() - startTime;
+    error = err instanceof Error ? err.message : "Unknown error";
+    success = false;
+
+    logger.error({ err }, "Error processing image");
+
+    if (error.includes("not found")) {
+      return new Response(JSON.stringify({ error }), {
         status: 404,
         headers: { "Content-Type": "application/json" },
       });
     }
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Error processing image",
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return new Response(JSON.stringify({ error }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  } finally {
+    // Track the image optimization event
+    if (umamiService) {
+      const url = new URL(req.url);
+      const src = decodeURIComponent(url.pathname.replace(/^\//, ""));
+      const width = url.searchParams.get("w");
+      const quality = url.searchParams.get("q") || "75";
+
+      await umamiService.trackImageOptimization({
+        originalUrl: src,
+        width: width ? parseInt(width, 10) : undefined,
+        quality: parseInt(quality, 10),
+        originalSize,
+        optimizedSize,
+        processingTime,
+        success,
+        error,
+        cacheHit,
+        source,
+      });
+    }
   }
 }
-
-export { umamiService };
