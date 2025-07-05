@@ -302,7 +302,7 @@ export async function createUmamiService(config: UmamiConfig): Promise<UmamiServ
  * Default Umami configuration from environment variables
  */
 export function getDefaultUmamiConfig(): UmamiConfig | null {
-  const baseUrl = Bun.env.UMAMI_BASE_URL;
+  const baseUrl = Bun.env.UMAMI_HOSTNAME;
   const websiteId = Bun.env.UMAMI_WEBSITE_ID;
 
   if (!baseUrl || !websiteId) {
@@ -312,7 +312,7 @@ export function getDefaultUmamiConfig(): UmamiConfig | null {
   return {
     baseUrl,
     websiteId,
-    username: Bun.env.UMAMI_USERNAME,
+    username: Bun.env.UMAMI_USER,
     password: Bun.env.UMAMI_PASSWORD,
     token: Bun.env.UMAMI_TOKEN,
   };
