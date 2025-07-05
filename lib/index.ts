@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "path";
 import pino from "pino";
 import sharp from "sharp";
+import { createUmamiService, getDefaultUmamiConfig, UmamiService } from "./umami";
 
 // Ensure logs directory exists
 try {
@@ -39,6 +40,20 @@ export const logger = pino({
 let redis: Bun.RedisClient | null = null;
 let isCacheEnabled = false;
 let s3Client: Bun.S3Client | null = null;
+let umamiService: UmamiService | null = null;
+const umamiConfig = getDefaultUmamiConfig();
+if (umamiConfig) {
+  createUmamiService(umamiConfig)
+    .then((service: UmamiService) => {
+      umamiService = service;
+      logger.info("✅ Umami service initialized");
+    })
+    .catch((err: unknown) => {
+      logger.error({ err }, "❌ Failed to initialize Umami service");
+    });
+} else {
+  logger.warn("ℹ️ Umami config not set. Tracking is disabled.");
+}
 
 /**
  * Initializes the Redis cache connection if REDIS_URL is provided in environment variables.
@@ -447,3 +462,5 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     );
   }
 }
+
+export { umamiService };
