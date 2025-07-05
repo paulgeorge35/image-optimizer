@@ -44,6 +44,7 @@ interface ImageOptimizationEvent {
   source: "url" | "r2";
   referrer?: string;
   userAgent?: string;
+  eventType: "optimization" | "cache_hit" | "cache_miss" | "error";
 }
 
 export class UmamiService {
@@ -147,7 +148,7 @@ export class UmamiService {
         payload: {
           hostname: "image-optimizer",
           language: "en-US",
-          referrer: "",
+          referrer: event.data?.referrer || "https://image.paulgeorge.dev",
           screen: "1920x1080",
           title: event.title || "Image Optimization",
           url: event.url || "/",
@@ -192,8 +193,6 @@ export class UmamiService {
         // Response is not JSON, which is fine
       }
 
-      logger.info("✅ Umami event sent successfully", { event, response });
-
       return true;
     } catch (error) {
       logger.error("❌ Failed to track Umami event:", error);
@@ -206,8 +205,9 @@ export class UmamiService {
    */
   async trackImageOptimization(event: ImageOptimizationEvent): Promise<boolean> {
     const eventData = {
-      name: event.success ? "image_optimization_success" : "image_optimization_error",
+      name: "image_optimization",
       data: {
+        eventType: event.eventType,
         originalUrl: event.originalUrl,
         width: event.width,
         quality: event.quality,
@@ -241,20 +241,15 @@ export class UmamiService {
     referrer?: string,
     userAgent?: string
   ): Promise<boolean> {
-    return this.trackEvent(
-      {
-        name: "cache_hit",
-        data: {
-          originalUrl,
-          source,
-          referrer,
-          userAgent,
-        },
-        url: "/optimize",
-        title: "Cache Hit",
-      },
-      userAgent
-    );
+    return this.trackImageOptimization({
+      originalUrl,
+      source,
+      referrer,
+      userAgent,
+      success: true,
+      cacheHit: true,
+      eventType: "cache_hit",
+    });
   }
 
   /**
@@ -266,35 +261,29 @@ export class UmamiService {
     referrer?: string,
     userAgent?: string
   ): Promise<boolean> {
-    return this.trackEvent(
-      {
-        name: "cache_miss",
-        data: {
-          originalUrl,
-          source,
-          referrer,
-          userAgent,
-        },
-        url: "/optimize",
-        title: "Cache Miss",
-      },
-      userAgent
-    );
+    return this.trackImageOptimization({
+      originalUrl,
+      source,
+      referrer,
+      userAgent,
+      success: true,
+      cacheHit: false,
+      eventType: "cache_miss",
+    });
   }
 
   /**
    * Tracks errors
    */
   async trackError(error: string, context?: Record<string, any>): Promise<boolean> {
-    return this.trackEvent({
-      name: "error",
-      data: {
-        error,
-        context,
-        timestamp: new Date().toISOString(),
-      },
-      url: "/error",
-      title: "Error",
+    return this.trackImageOptimization({
+      originalUrl: context?.originalUrl || "",
+      source: context?.source || "url",
+      referrer: context?.referrer,
+      userAgent: context?.userAgent,
+      success: false,
+      error,
+      eventType: "error",
     });
   }
 

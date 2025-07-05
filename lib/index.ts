@@ -516,6 +516,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
         source,
         referrer,
         userAgent,
+        eventType: success ? (cacheHit ? "cache_hit" : "optimization") : "error",
       });
     }
   }
