@@ -392,6 +392,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
   let optimizedSize: number | undefined;
   let success = false;
   let error: string | undefined;
+  let referrer: string | undefined;
 
   try {
     logger.info({ url: req.url }, "🔍 Handling image request");
@@ -399,6 +400,9 @@ export async function handleImageRequest(req: Request): Promise<Response> {
     const src = decodeURIComponent(url.pathname.replace(/^\//, ""));
     const width = url.searchParams.get("w");
     const quality = url.searchParams.get("q") || "75";
+
+    // Extract referrer from headers
+    referrer = req.headers.get("referer") || req.headers.get("referrer") || undefined;
 
     if (!src) {
       error = "Source image is required";
@@ -419,7 +423,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
 
       // Track cache hit
       if (umamiService) {
-        await umamiService.trackCacheHit(src, source);
+        await umamiService.trackCacheHit(src, source, referrer);
       }
 
       return new Response(new Uint8Array(cachedImage), {
@@ -432,7 +436,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
 
     // Track cache miss
     if (umamiService) {
-      await umamiService.trackCacheMiss(src, source);
+      await umamiService.trackCacheMiss(src, source, referrer);
     }
 
     // Get image buffer from URL or R2 bucket
@@ -508,6 +512,7 @@ export async function handleImageRequest(req: Request): Promise<Response> {
         error,
         cacheHit,
         source,
+        referrer,
       });
     }
   }

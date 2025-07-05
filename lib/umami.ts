@@ -42,6 +42,7 @@ interface ImageOptimizationEvent {
   error?: string;
   cacheHit?: boolean;
   source: "url" | "r2";
+  referrer?: string;
 }
 
 export class UmamiService {
@@ -170,6 +171,8 @@ export class UmamiService {
         throw new Error(`Failed to send event: ${response.status}`);
       }
 
+      logger.info("✅ Umami event sent successfully", { event, response });
+
       return true;
     } catch (error) {
       logger.error("❌ Failed to track Umami event:", error);
@@ -194,6 +197,7 @@ export class UmamiService {
         error: event.error,
         cacheHit: event.cacheHit,
         source: event.source,
+        referrer: event.referrer,
         compressionRatio:
           event.originalSize && event.optimizedSize
             ? Math.round((1 - event.optimizedSize / event.originalSize) * 100)
@@ -209,12 +213,17 @@ export class UmamiService {
   /**
    * Tracks cache hits
    */
-  async trackCacheHit(originalUrl: string, source: "url" | "r2"): Promise<boolean> {
+  async trackCacheHit(
+    originalUrl: string,
+    source: "url" | "r2",
+    referrer?: string
+  ): Promise<boolean> {
     return this.trackEvent({
       name: "cache_hit",
       data: {
         originalUrl,
         source,
+        referrer,
       },
       url: "/optimize",
       title: "Cache Hit",
@@ -224,12 +233,17 @@ export class UmamiService {
   /**
    * Tracks cache misses
    */
-  async trackCacheMiss(originalUrl: string, source: "url" | "r2"): Promise<boolean> {
+  async trackCacheMiss(
+    originalUrl: string,
+    source: "url" | "r2",
+    referrer?: string
+  ): Promise<boolean> {
     return this.trackEvent({
       name: "cache_miss",
       data: {
         originalUrl,
         source,
+        referrer,
       },
       url: "/optimize",
       title: "Cache Miss",
