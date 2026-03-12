@@ -1,40 +1,44 @@
 import { mkdir } from "node:fs/promises";
-import { join } from "path";
+import { join } from "node:path";
 import pino from "pino";
 import sharp from "sharp";
-import { createUmamiService, getDefaultUmamiConfig, UmamiService } from "./umami";
+import {
+	createUmamiService,
+	getDefaultUmamiConfig,
+	type UmamiService,
+} from "./umami";
 
 // Ensure logs directory exists
 try {
-  await mkdir("logs", { recursive: true });
-} catch (error) {
-  // Directory might already exist, ignore error
+	await mkdir("logs", { recursive: true });
+} catch (_error) {
+	// Directory might already exist, ignore error
 }
 
 // Configure Pino logger with file transport
 export const logger = pino({
-  level: "info",
-  transport: {
-    targets: [
-      {
-        target: "pino-pretty",
-        level: "info",
-        options: {
-          colorize: true,
-          translateTime: "SYS:standard",
-          ignore: "pid,hostname",
-        },
-      },
-      {
-        target: "pino/file",
-        level: "info",
-        options: {
-          destination: join("logs", "app.log"),
-          mkdir: true,
-        },
-      },
-    ],
-  },
+	level: "info",
+	transport: {
+		targets: [
+			{
+				target: "pino-pretty",
+				level: "info",
+				options: {
+					colorize: true,
+					translateTime: "SYS:standard",
+					ignore: "pid,hostname",
+				},
+			},
+			{
+				target: "pino/file",
+				level: "info",
+				options: {
+					destination: join("logs", "app.log"),
+					mkdir: true,
+				},
+			},
+		],
+	},
 });
 
 let redis: Bun.RedisClient | null = null;
@@ -43,16 +47,16 @@ let s3Client: Bun.S3Client | null = null;
 let umamiService: UmamiService | null = null;
 const umamiConfig = getDefaultUmamiConfig();
 if (umamiConfig) {
-  createUmamiService(umamiConfig)
-    .then((service: UmamiService) => {
-      umamiService = service;
-      logger.info("✅ Umami service initialized");
-    })
-    .catch((err: unknown) => {
-      logger.error({ err }, "❌ Failed to initialize Umami service");
-    });
+	createUmamiService(umamiConfig)
+		.then((service: UmamiService) => {
+			umamiService = service;
+			logger.info("✅ Umami service initialized");
+		})
+		.catch((err: unknown) => {
+			logger.error({ err }, "❌ Failed to initialize Umami service");
+		});
 } else {
-  logger.warn("ℹ️ Umami config not set. Tracking is disabled.");
+	logger.warn("ℹ️ Umami config not set. Tracking is disabled.");
 }
 
 /**
@@ -65,35 +69,38 @@ if (umamiConfig) {
  * // Console output: "✅ Redis cache enabled"
  */
 export async function initializeCache() {
-  try {
-    redis = new Bun.RedisClient(Bun.env.REDIS_URL);
-    redis.onconnect = () => {
-      logger.info("✅ Redis cache connected");
-    };
-    redis.onclose = error => {
-      logger.error({ err: error }, "❌ Redis cache disconnected");
-    };
+	try {
+		redis = new Bun.RedisClient(Bun.env.REDIS_URL);
+		redis.onconnect = () => {
+			logger.info("✅ Redis cache connected");
+		};
+		redis.onclose = (error) => {
+			logger.error({ err: error }, "❌ Redis cache disconnected");
+		};
 
-    await Promise.race([
-      redis.connect(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Redis connection timeout")), 1000)
-      ),
-    ]);
+		await Promise.race([
+			redis.connect(),
+			new Promise((_, reject) =>
+				setTimeout(() => reject(new Error("Redis connection timeout")), 1000),
+			),
+		]);
 
-    isCacheEnabled = true;
-    logger.info("✅ Redis cache enabled");
-  } catch {
-    logger.error({ REDIS_URL: Bun.env.REDIS_URL }, "❌ Redis connection failed");
-    redis = null;
-    isCacheEnabled = false;
-  }
+		isCacheEnabled = true;
+		logger.info("✅ Redis cache enabled");
+	} catch {
+		logger.error(
+			{ REDIS_URL: Bun.env.REDIS_URL },
+			"❌ Redis connection failed",
+		);
+		redis = null;
+		isCacheEnabled = false;
+	}
 }
 
 const credentials = {
-  accessKeyId: Bun.env.R2_ACCESS_KEY_ID,
-  secretAccessKey: Bun.env.R2_SECRET_ACCESS_KEY,
-  bucket: Bun.env.R2_BUCKET_NAME,
+	accessKeyId: Bun.env.R2_ACCESS_KEY_ID,
+	secretAccessKey: Bun.env.R2_SECRET_ACCESS_KEY,
+	bucket: Bun.env.R2_BUCKET_NAME,
 };
 
 /**
@@ -106,29 +113,29 @@ const credentials = {
  * // Console output: "✅ S3 client enabled for R2"
  */
 export async function initializeS3Client() {
-  try {
-    if (
-      Bun.env.R2_ACCOUNT_ID &&
-      Bun.env.R2_ACCESS_KEY_ID &&
-      Bun.env.R2_SECRET_ACCESS_KEY &&
-      Bun.env.R2_BUCKET_NAME &&
-      Bun.env.R2_REGION
-    ) {
-      s3Client = new Bun.S3Client({
-        region: Bun.env.R2_REGION,
-        endpoint: `https://${Bun.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-        accessKeyId: Bun.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: Bun.env.R2_SECRET_ACCESS_KEY,
-      });
-      await s3Client.list({ maxKeys: 1 }, credentials);
-      logger.info("✅ S3 client enabled for R2");
-    } else {
-      logger.info("ℹ️ S3 client disabled (R2 credentials not set)");
-    }
-  } catch (error) {
-    logger.error("❌ S3 client initialization failed");
-    s3Client = null;
-  }
+	try {
+		if (
+			Bun.env.R2_ACCOUNT_ID &&
+			Bun.env.R2_ACCESS_KEY_ID &&
+			Bun.env.R2_SECRET_ACCESS_KEY &&
+			Bun.env.R2_BUCKET_NAME &&
+			Bun.env.R2_REGION
+		) {
+			s3Client = new Bun.S3Client({
+				region: Bun.env.R2_REGION,
+				endpoint: `https://${Bun.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+				accessKeyId: Bun.env.R2_ACCESS_KEY_ID,
+				secretAccessKey: Bun.env.R2_SECRET_ACCESS_KEY,
+			});
+			await s3Client.list({ maxKeys: 1 }, credentials);
+			logger.info("✅ S3 client enabled for R2");
+		} else {
+			logger.info("ℹ️ S3 client disabled (R2 credentials not set)");
+		}
+	} catch (_error) {
+		logger.error("❌ S3 client initialization failed");
+		s3Client = null;
+	}
 }
 
 /**
@@ -141,11 +148,11 @@ export async function initializeS3Client() {
  * // Returns: { redis: "connected", s3: "connected" }
  */
 export function getServiceStatus() {
-  return {
-    redis: isCacheEnabled && redis ? "connected" : "disabled",
-    s3: s3Client ? "connected" : "disabled",
-    timestamp: new Date().toISOString(),
-  };
+	return {
+		redis: isCacheEnabled && redis ? "connected" : "disabled",
+		s3: s3Client ? "connected" : "disabled",
+		timestamp: new Date().toISOString(),
+	};
 }
 
 await initializeCache();
@@ -167,59 +174,64 @@ await initializeS3Client();
  * const buffer = await getImageBuffer('images/photo.jpg');
  */
 export async function getImageBuffer(src: string): Promise<Buffer> {
-  // Check if src starts with http:// or https:// for URLs
-  if (src.startsWith("http://") || src.startsWith("https://")) {
-    logger.info({ src }, "🔍 Looking for image in URL");
-    try {
-      const imageResponse = await fetch(src);
-      if (!imageResponse.ok) {
-        throw new Error("Image not found");
-      }
-      return Buffer.from(await imageResponse.arrayBuffer());
-    } catch (error) {
-      logger.error({ err: error }, "Error fetching URL");
-      throw new Error(`Failed to fetch image from URL: ${src}`);
-    }
-  } else {
-    // Handle R2 bucket key
-    try {
-      // Try to get cached original image first
-      const cachedOriginal = await getCachedOriginalImage(src);
-      if (cachedOriginal) {
-        logger.info({ src }, "✅ Original image retrieved from cache");
-        return cachedOriginal;
-      }
+	// Check if src starts with http:// or https:// for URLs
+	if (src.startsWith("http://") || src.startsWith("https://")) {
+		logger.info({ src }, "🔍 Looking for image in URL");
+		try {
+			const imageResponse = await fetch(src);
+			if (!imageResponse.ok) {
+				throw new Error("Image not found");
+			}
+			return Buffer.from(await imageResponse.arrayBuffer());
+		} catch (error) {
+			logger.error({ err: error }, "Error fetching URL");
+			throw new Error(`Failed to fetch image from URL: ${src}`);
+		}
+	} else {
+		// Handle R2 bucket key
+		try {
+			// Try to get cached original image first
+			const cachedOriginal = await getCachedOriginalImage(src);
+			if (cachedOriginal) {
+				logger.info({ src }, "✅ Original image retrieved from cache");
+				return cachedOriginal;
+			}
 
-      if (!s3Client) {
-        throw new Error("S3 client not initialized. Please set R2 credentials.");
-      }
-      logger.info({ src }, "🔍 Looking for image in R2 bucket");
-      const response = s3Client.file(src, credentials);
+			if (!s3Client) {
+				throw new Error(
+					"S3 client not initialized. Please set R2 credentials.",
+				);
+			}
+			logger.info({ src }, "🔍 Looking for image in R2 bucket");
+			const response = s3Client.file(src, credentials);
 
-      if (!response) {
-        throw new Error("Empty response body from R2");
-      }
+			if (!response) {
+				throw new Error("Empty response body from R2");
+			}
 
-      // Get the file content as buffer
-      const buffer = await response.arrayBuffer();
-      const imageBuffer = Buffer.from(buffer);
-      logger.info({ key: src, size: buffer.byteLength }, "✅ Image retrieved from R2");
+			// Get the file content as buffer
+			const buffer = await response.arrayBuffer();
+			const imageBuffer = Buffer.from(buffer);
+			logger.info(
+				{ key: src, size: buffer.byteLength },
+				"✅ Image retrieved from R2",
+			);
 
-      // Cache the original image
-      await cacheOriginalImage(src, imageBuffer);
+			// Cache the original image
+			await cacheOriginalImage(src, imageBuffer);
 
-      return imageBuffer;
-    } catch (s3Error) {
-      logger.error({ err: s3Error, key: src }, "Error reading from R2 bucket");
+			return imageBuffer;
+		} catch (s3Error) {
+			logger.error({ err: s3Error, key: src }, "Error reading from R2 bucket");
 
-      // Check if it's a "not found" error
-      if (s3Error instanceof Error && s3Error.message.includes("NoSuchKey")) {
-        throw new Error(`Image not found in R2 bucket: ${src}`);
-      }
+			// Check if it's a "not found" error
+			if (s3Error instanceof Error && s3Error.message.includes("NoSuchKey")) {
+				throw new Error(`Image not found in R2 bucket: ${src}`);
+			}
 
-      throw new Error(`Failed to read image from R2: ${src}`);
-    }
-  }
+			throw new Error(`Failed to read image from R2: ${src}`);
+		}
+	}
 }
 
 /**
@@ -229,21 +241,21 @@ export async function getImageBuffer(src: string): Promise<Buffer> {
  * @returns {Promise<Buffer|null>} The cached original image buffer or null if not found.
  */
 async function getCachedOriginalImage(src: string): Promise<Buffer | null> {
-  if (!isCacheEnabled || !redis) {
-    return null;
-  }
+	if (!isCacheEnabled || !redis) {
+		return null;
+	}
 
-  const cacheKey = `original:${src}`;
-  logger.info({ cacheKey }, "🔍 Getting original image from Redis");
-  const cachedImage = await redis.get(cacheKey);
+	const cacheKey = `original:${src}`;
+	logger.info({ cacheKey }, "🔍 Getting original image from Redis");
+	const cachedImage = await redis.get(cacheKey);
 
-  if (cachedImage) {
-    logger.info({ cacheKey }, "✅ Original image cache hit");
-    return Buffer.from(cachedImage, "base64");
-  }
+	if (cachedImage) {
+		logger.info({ cacheKey }, "✅ Original image cache hit");
+		return Buffer.from(cachedImage, "base64");
+	}
 
-  logger.info({ cacheKey }, "❌ Original image cache miss");
-  return null;
+	logger.info({ cacheKey }, "❌ Original image cache miss");
+	return null;
 }
 
 /**
@@ -252,14 +264,22 @@ async function getCachedOriginalImage(src: string): Promise<Buffer | null> {
  * @param {string} src - The source image path or URL.
  * @param {Buffer} imageBuffer - The original image buffer to cache.
  */
-async function cacheOriginalImage(src: string, imageBuffer: Buffer): Promise<void> {
-  if (!isCacheEnabled || !redis) {
-    return;
-  }
+async function cacheOriginalImage(
+	src: string,
+	imageBuffer: Buffer,
+): Promise<void> {
+	if (!isCacheEnabled || !redis) {
+		return;
+	}
 
-  const cacheKey = `original:${src}`;
-  logger.info({ cacheKey }, "💾 Caching original image");
-  await redis.set(cacheKey, imageBuffer.toString("base64"), "EX", 60 * 60 * 24 * 7); // Cache for 7 days
+	const cacheKey = `original:${src}`;
+	logger.info({ cacheKey }, "💾 Caching original image");
+	await redis.set(
+		cacheKey,
+		imageBuffer.toString("base64"),
+		"EX",
+		60 * 60 * 24 * 7,
+	); // Cache for 7 days
 }
 
 /**
@@ -271,26 +291,26 @@ async function cacheOriginalImage(src: string, imageBuffer: Buffer): Promise<voi
  * @returns {Promise<Buffer|null>} The cached image buffer or null if not found.
  */
 async function getCachedImage(
-  src: string,
-  width: string | null,
-  quality: string
+	src: string,
+	width: string | null,
+	quality: string,
 ): Promise<Buffer | null> {
-  if (!isCacheEnabled || !redis) {
-    return null;
-  }
+	if (!isCacheEnabled || !redis) {
+		return null;
+	}
 
-  logger.info("🔍 Trying cache");
-  const cacheKey = `img:${src}:w=${width}:q=${quality}`;
-  logger.info({ cacheKey }, "🔍 Getting from Redis");
-  const cachedImage = await redis.get(cacheKey);
+	logger.info("🔍 Trying cache");
+	const cacheKey = `img:${src}:w=${width}:q=${quality}`;
+	logger.info({ cacheKey }, "🔍 Getting from Redis");
+	const cachedImage = await redis.get(cacheKey);
 
-  if (cachedImage) {
-    logger.info({ cacheKey }, "✅ Cache hit");
-    return Buffer.from(cachedImage, "base64");
-  }
+	if (cachedImage) {
+		logger.info({ cacheKey }, "✅ Cache hit");
+		return Buffer.from(cachedImage, "base64");
+	}
 
-  logger.info({ cacheKey }, "❌ Cache miss");
-  return null;
+	logger.info({ cacheKey }, "❌ Cache miss");
+	return null;
 }
 
 /**
@@ -302,18 +322,23 @@ async function getCachedImage(
  * @param {Buffer} imageBuffer - The image buffer to cache.
  */
 async function cacheImage(
-  src: string,
-  width: string | null,
-  quality: string,
-  imageBuffer: Buffer
+	src: string,
+	width: string | null,
+	quality: string,
+	imageBuffer: Buffer,
 ): Promise<void> {
-  if (!isCacheEnabled || !redis) {
-    return;
-  }
+	if (!isCacheEnabled || !redis) {
+		return;
+	}
 
-  const cacheKey = `img:${src}:w=${width}:q=${quality}`;
-  logger.info({ cacheKey }, "💾 Caching image");
-  await redis.set(cacheKey, imageBuffer.toString("base64"), "EX", 60 * 60 * 24 * 7); // Cache for 7 days
+	const cacheKey = `img:${src}:w=${width}:q=${quality}`;
+	logger.info({ cacheKey }, "💾 Caching image");
+	await redis.set(
+		cacheKey,
+		imageBuffer.toString("base64"),
+		"EX",
+		60 * 60 * 24 * 7,
+	); // Cache for 7 days
 }
 
 /**
@@ -325,27 +350,27 @@ async function cacheImage(
  * @returns {Promise<Buffer>} The processed image buffer.
  */
 async function processImage(
-  originalBuffer: Buffer,
-  width: string | null,
-  quality: string
+	originalBuffer: Buffer,
+	width: string | null,
+	quality: string,
 ): Promise<Buffer> {
-  let imageProcess = sharp(originalBuffer);
+	let imageProcess = sharp(originalBuffer);
 
-  // Resize if width is provided
-  if (width) {
-    const parsedWidth = parseInt(width, 10);
-    if (!isNaN(parsedWidth)) {
-      imageProcess = imageProcess.resize(parsedWidth);
-    }
-  }
+	// Resize if width is provided
+	if (width) {
+		const parsedWidth = parseInt(width, 10);
+		if (!Number.isNaN(parsedWidth)) {
+			imageProcess = imageProcess.resize(parsedWidth);
+		}
+	}
 
-  // Set quality and convert to WebP
-  const q = parseInt(quality, 10);
-  if (!isNaN(q) && q >= 0 && q <= 100) {
-    imageProcess = imageProcess.webp({ quality: q });
-  }
+	// Set quality and convert to WebP
+	const q = parseInt(quality, 10);
+	if (!Number.isNaN(q) && q >= 0 && q <= 100) {
+		imageProcess = imageProcess.webp({ quality: q });
+	}
 
-  return await imageProcess.toBuffer();
+	return await imageProcess.toBuffer();
 }
 
 /**
@@ -355,15 +380,28 @@ async function processImage(
  * @param {number} originalSize - The original image size in bytes.
  * @param {number} optimizedSize - The optimized image size in bytes.
  */
-function logOptimizationStats(src: string, originalSize: number, optimizedSize: number): void {
-  const savings = (((originalSize - optimizedSize) / originalSize) * 100).toFixed(2);
+function logOptimizationStats(
+	src: string,
+	originalSize: number,
+	optimizedSize: number,
+): void {
+	const savings = (
+		((originalSize - optimizedSize) / originalSize) *
+		100
+	).toFixed(2);
 
-  logger.info({ src }, `🖼️  Image processed`);
-  logger.info({ originalSize: (originalSize / 1024).toFixed(2) + " KB" }, `💾 Original size`);
-  logger.info({ optimizedSize: (optimizedSize / 1024).toFixed(2) + " KB" }, `💾 Optimized size`);
-  if (parseFloat(savings) > 0) {
-    logger.info({ savings: `${savings}%` }, `💰 Saved`);
-  }
+	logger.info({ src }, `🖼️  Image processed`);
+	logger.info(
+		{ originalSize: (originalSize / 1024).toFixed(2) + " KB" },
+		`💾 Original size`,
+	);
+	logger.info(
+		{ optimizedSize: (optimizedSize / 1024).toFixed(2) + " KB" },
+		`💾 Optimized size`,
+	);
+	if (parseFloat(savings) > 0) {
+		logger.info({ savings: `${savings}%` }, `💰 Saved`);
+	}
 }
 
 /**
@@ -384,140 +422,155 @@ function logOptimizationStats(src: string, originalSize: number, optimizedSize: 
  * // Returns optimized WebP image with width 800px and 80% quality
  */
 export async function handleImageRequest(req: Request): Promise<Response> {
-  const startTime = Date.now();
-  let processingTime: number | undefined;
-  let cacheHit = false;
-  let source: "url" | "r2" = "url";
-  let originalSize: number | undefined;
-  let optimizedSize: number | undefined;
-  let success = false;
-  let error: string | undefined;
-  let referrer: string | undefined;
-  let userAgent: string | undefined;
+	const startTime = Date.now();
+	let processingTime: number | undefined;
+	let cacheHit = false;
+	let source: "url" | "r2" = "url";
+	let originalSize: number | undefined;
+	let optimizedSize: number | undefined;
+	let success = false;
+	let error: string | undefined;
+	let referrer: string | undefined;
+	let userAgent: string | undefined;
 
-  try {
-    logger.info({ url: req.url }, "🔍 Handling image request");
-    const url = new URL(req.url);
-    const src = decodeURIComponent(url.pathname.replace(/^\//, ""));
-    const width = url.searchParams.get("w");
-    const quality = url.searchParams.get("q") || "75";
+	try {
+		logger.info({ url: req.url }, "🔍 Handling image request");
+		const url = new URL(req.url);
+		const src = decodeURIComponent(url.pathname.replace(/^\//, ""));
+		const width = url.searchParams.get("w");
+		const quality = url.searchParams.get("q") || "75";
 
-    // Extract referrer and user agent from headers
-    referrer = req.headers.get("referer") || req.headers.get("referrer") || undefined;
-    userAgent = req.headers.get("user-agent") || undefined;
+		// Extract referrer and user agent from headers
+		referrer =
+			req.headers.get("referer") || req.headers.get("referrer") || undefined;
+		userAgent = req.headers.get("user-agent") || undefined;
 
-    if (!src) {
-      error = "Source image is required";
-      return new Response(JSON.stringify({ error }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+		if (!src) {
+			error = "Source image is required";
+			return new Response(JSON.stringify({ error }), {
+				status: 400,
+				headers: { "Content-Type": "application/json" },
+			});
+		}
 
-    // Determine source type
-    source = src.startsWith("http://") || src.startsWith("https://") ? "url" : "r2";
+		// Determine source type
+		source =
+			src.startsWith("http://") || src.startsWith("https://") ? "url" : "r2";
 
-    // Try to get cached image
-    const cachedImage = await getCachedImage(src, width, quality);
-    if (cachedImage) {
-      cacheHit = true;
-      processingTime = Date.now() - startTime;
+		// Browser cache headers: 1 year, immutable (URL with w/q is the cache key)
+		const imageCacheHeaders: Record<string, string> = {
+			"Content-Type": "image/webp",
+			"Cache-Control": "public, max-age=31536000, immutable",
+		};
 
-      // Track cache hit
-      if (umamiService) {
-        await umamiService.trackCacheHit(src, source, referrer, userAgent);
-      }
+		// Try to get cached image
+		const cachedImage = await getCachedImage(src, width, quality);
+		if (cachedImage) {
+			cacheHit = true;
+			processingTime = Date.now() - startTime;
 
-      return new Response(new Uint8Array(cachedImage), {
-        headers: {
-          "Content-Type": "image/webp",
-          "X-Cache": "HIT",
-        },
-      });
-    }
+			// Track cache hit
+			if (umamiService) {
+				await umamiService.trackCacheHit(src, source, referrer, userAgent);
+			}
 
-    // Track cache miss
-    if (umamiService) {
-      await umamiService.trackCacheMiss(src, source, referrer, userAgent);
-    }
+			return new Response(new Uint8Array(cachedImage), {
+				headers: {
+					...imageCacheHeaders,
+					"X-Cache": "HIT",
+				},
+			});
+		}
 
-    // Get image buffer from URL or R2 bucket
-    const originalBuffer = await getImageBuffer(src);
-    originalSize = originalBuffer.length;
+		// Track cache miss
+		if (umamiService) {
+			await umamiService.trackCacheMiss(src, source, referrer, userAgent);
+		}
 
-    // Process the image
-    const processedImage = await processImage(originalBuffer, width, quality);
-    optimizedSize = processedImage.length;
+		// Get image buffer from URL or R2 bucket
+		const originalBuffer = await getImageBuffer(src);
+		originalSize = originalBuffer.length;
 
-    // Log optimization statistics
-    logOptimizationStats(src, originalSize, optimizedSize);
+		// Process the image
+		const processedImage = await processImage(originalBuffer, width, quality);
+		optimizedSize = processedImage.length;
 
-    // Cache the optimized image
-    await cacheImage(src, width, quality, processedImage);
+		// Log optimization statistics
+		logOptimizationStats(src, originalSize, optimizedSize);
 
-    // Calculate savings
-    const savings = (((originalSize - optimizedSize) / originalSize) * 100).toFixed(2);
+		// Cache the optimized image
+		await cacheImage(src, width, quality, processedImage);
 
-    processingTime = Date.now() - startTime;
-    success = true;
+		// Calculate savings
+		const savings = (
+			((originalSize - optimizedSize) / originalSize) *
+			100
+		).toFixed(2);
 
-    // If optimization resulted in a larger file, return original
-    if (parseFloat(savings) < 0) {
-      return new Response(new Uint8Array(originalBuffer), {
-        headers: {
-          "Content-Type": "image/webp",
-          "X-Cache": "MISS",
-        },
-      });
-    } else {
-      // Send the optimized image
-      return new Response(new Uint8Array(processedImage), {
-        headers: {
-          "Content-Type": "image/webp",
-          "X-Cache": "MISS",
-        },
-      });
-    }
-  } catch (err) {
-    processingTime = Date.now() - startTime;
-    error = err instanceof Error ? err.message : "Unknown error";
-    success = false;
+		processingTime = Date.now() - startTime;
+		success = true;
 
-    logger.error({ err }, "Error processing image");
+		// If optimization resulted in a larger file, return original
+		if (parseFloat(savings) < 0) {
+			return new Response(new Uint8Array(originalBuffer), {
+				headers: {
+					...imageCacheHeaders,
+					"X-Cache": "MISS",
+				},
+			});
+		} else {
+			// Send the optimized image
+			return new Response(new Uint8Array(processedImage), {
+				headers: {
+					...imageCacheHeaders,
+					"X-Cache": "MISS",
+				},
+			});
+		}
+	} catch (err) {
+		processingTime = Date.now() - startTime;
+		error = err instanceof Error ? err.message : "Unknown error";
+		success = false;
 
-    if (error.includes("not found")) {
-      return new Response(JSON.stringify({ error }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    return new Response(JSON.stringify({ error }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  } finally {
-    // Track the image optimization event
-    if (umamiService) {
-      const url = new URL(req.url);
-      const src = decodeURIComponent(url.pathname.replace(/^\//, ""));
-      const width = url.searchParams.get("w");
-      const quality = url.searchParams.get("q") || "75";
+		logger.error({ err }, "Error processing image");
 
-      await umamiService.trackImageOptimization({
-        originalUrl: src,
-        width: width ? parseInt(width, 10) : undefined,
-        quality: parseInt(quality, 10),
-        originalSize,
-        optimizedSize,
-        processingTime,
-        success,
-        error,
-        cacheHit,
-        source,
-        referrer,
-        userAgent,
-        eventType: success ? (cacheHit ? "cache_hit" : "optimization") : "error",
-      });
-    }
-  }
+		if (error.includes("not found")) {
+			return new Response(JSON.stringify({ error }), {
+				status: 404,
+				headers: { "Content-Type": "application/json" },
+			});
+		}
+		return new Response(JSON.stringify({ error }), {
+			status: 500,
+			headers: { "Content-Type": "application/json" },
+		});
+	} finally {
+		// Track the image optimization event
+		if (umamiService) {
+			const url = new URL(req.url);
+			const src = decodeURIComponent(url.pathname.replace(/^\//, ""));
+			const width = url.searchParams.get("w");
+			const quality = url.searchParams.get("q") || "75";
+
+			await umamiService.trackImageOptimization({
+				originalUrl: src,
+				width: width ? parseInt(width, 10) : undefined,
+				quality: parseInt(quality, 10),
+				originalSize,
+				optimizedSize,
+				processingTime,
+				success,
+				error,
+				cacheHit,
+				source,
+				referrer,
+				userAgent,
+				eventType: success
+					? cacheHit
+						? "cache_hit"
+						: "optimization"
+					: "error",
+			});
+		}
+	}
 }
